@@ -1,6 +1,10 @@
 "use client";
-
 import React, { useState } from "react";
+import Image from "next/image";
+// import filter from "@/app/assent/icons8-filter-24.png"
+// import pencil from "@/app/assent/school-material_3156591 (1).png"
+// import trash from "@/app/assent/delete_2550213.png"
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 
 interface Column {
   key: string;
@@ -22,7 +26,12 @@ const Table: React.FC = () => {
   const [determinantValue, setDeterminantValue] = useState<string>("مساوی");
   const [startOrEnd, setStartOrEnd] = useState<string>("شروع از");
   const [selectedColumn, setSelectedColumn] = useState<string>("");
-  const [];
+  const [filterLogic, setFilterLogic] = useState<"AND" | "OR" | "NAND" | "NOR">("AND");
+  const [draggedFilters, setDraggedFilters] = useState([]);
+  const [selectedFilters, setSelectedFilters] = useState<Record<string, boolean>>({});
+  const [initialFilters, setInitialFilters] = useState<{ [key: string]: any }>({});
+  const [appliedFilters, setAppliedFilters] = useState<any[]>([]);  // فیلترهای اعمال‌شده
+
   const [columns] = useState<Column[]>([
     { key: "sender", label: "فرستنده" },
     { key: "receiver", label: "گیرنده" },
@@ -62,36 +71,89 @@ const Table: React.FC = () => {
     },
   ]);
 
-  const handleHeaderClick = (key: string) => {
-    if (activeHeaderFilter !== key) {
-      setActiveHeaderFilter(key);
-      setInputValue("");
-    }
-  };
   const handleApplyFilter = () => {
     if (!selectedColumn || !inputValue) return;
+
+    const newFilter = {
+      column: selectedColumn,
+      value: inputValue,
+      determinant: determinantValue,  // استفاده از مقادیر جداگانه برای هر فیلتر
+      startOrEnd: startOrEnd
+    };
 
     setFilters((prev) => ({
       ...prev,
       [selectedColumn]: inputValue,
-      determinant: determinantValue,
-      startOrEnd: startOrEnd,
+      determinant: determinantValue,  // فقط برای همین فیلتر
+      startOrEnd: startOrEnd
     }));
+
+    
+    setAppliedFilters((prev) => [...prev, newFilter]);
+
+    setInputValue("");
+    setSelectedColumn("");
   };
 
-  const handleInputChange = (value: string) => {
-    setInputValue(value);
+  const handleDeterminantChange = (filterIndex: number, newDeterminant: string) => {
+    setAppliedFilters((prev) => {
+      const updatedFilters = [...prev];
+      updatedFilters[filterIndex].determinant = newDeterminant;  
+      return updatedFilters;
+    });
   };
 
-  const handleDeterminantChange = (value: string) => {
-    setDeterminantValue(value);
+
+
+  const handleCheckboxChange = (key: string) => {
+    setSelectedFilters((prev) => ({ ...prev, [key]: !prev[key] }));
+    if (!selectedFilters[key]) {
+      handleDropFilter(key);
+    }
+
   };
 
-  const handleStartOrEndChange = (value: string) => {
-    setStartOrEnd(value);
+  const onDragEnd = (result) => {
+    if (!result.destination) return;
+
+    const updatedFilters = Array.from(draggedFilters);
+    const [movedItem] = updatedFilters.splice(result.source.index, 1);
+    updatedFilters.splice(result.destination.index, 0, movedItem);
+
+    setDraggedFilters(updatedFilters);
   };
 
   const handleClearFilter = (key: string) => {
+    setDraggedFilters((prevDraggedFilters) => {
+      return prevDraggedFilters.filter((filterKey) => filterKey !== key);
+    });
+
+
+    setFilters((prevFilters) => {
+      const updatedFilters = { ...prevFilters };
+      if (updatedFilters[key] !== null && initialFilters[key]) {
+        updatedFilters[key] = initialFilters[key];
+
+} else {
+        updatedFilters[key] = null;
+      }
+      return updatedFilters;
+    });
+    setSelectedFilters((prevSelectedFilters) => {
+      const updatedSelectedFilters = { ...prevSelectedFilters };
+      delete updatedSelectedFilters[key];
+      return updatedSelectedFilters;
+    });
+
+  };
+
+  const handleDropFilter = (key) => {
+    if (!draggedFilters.includes(key)) {
+      setDraggedFilters([...draggedFilters, key]);
+    }
+  };
+
+  const handleClearFilterd = (key: string) => {
     setFilters((prevFilters) => {
       const updatedFilters = { ...prevFilters };
       delete updatedFilters[key];
@@ -101,7 +163,10 @@ const Table: React.FC = () => {
 
   const handleEditFilter = (key: string) => {
     setActiveHeaderFilter(key);
+    setSelectedColumn(key);
     setInputValue(filters[key] || "");
+    setDeterminantValue(filters.determinant || "مساوی");
+    setStartOrEnd(filters.startOrEnd || "شروع از");
   };
 
   const parseDate = (date: string) => {
@@ -110,7 +175,7 @@ const Table: React.FC = () => {
   };
 
   const filteredInvoices = invoices.filter((invoice) => {
-    return columns.every((column) => {
+    const filterResults = columns.map((column) => {
       const filterValue = filters[column.key];
       const determinant = filters.determinant || "مساوی";
       const startEnd = filters.startOrEnd || "شروع از";
@@ -129,9 +194,7 @@ const Table: React.FC = () => {
       }
 
       if (column.key === "amount" || column.key === "invoiceNumber") {
-        const numInvoiceValue = parseFloat(
-          invoice[column.key].replace(/\D/g, "")
-        );
+        const numInvoiceValue = parseFloat(invoice[column.key].replace(/\D/g, ""));
         const numFilterValue = parseFloat(filterValue);
 
         if (isNaN(numInvoiceValue) || isNaN(numFilterValue)) {
@@ -176,32 +239,49 @@ const Table: React.FC = () => {
 
       return invoice[column.key].includes(filterValue);
     });
+
+    switch (filterLogic) {
+      case "AND":
+        return filterResults.every((result) => result);
+      case "OR":
+        return filterResults.some((result) => result);
+      case "NAND":
+        return !filterResults.every((result) => result);
+      case "NOR":
+        return !filterResults.some((result) => result);
+      default:
+        return true;
+    }
   });
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: React.KeyboardEvent, key: string) => {
     if (e.key === "Enter") {
       setFilters((prev) => ({
         ...prev,
-        [activeHeaderFilter || ""]: inputValue,
+        [key]: (e.target as HTMLInputElement).value,
         determinant: determinantValue,
         startOrEnd: startOrEnd,
       }));
-      setActiveHeaderFilter(null);
+
+      setInputValue("");
+      setSelectedColumn("");
     }
   };
-  const handleApplyFilters = (newFilters: Record<string, string>) => {
-    setFilters(newFilters);
+
+  const handleFilterChange = (value: string, key: string) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   return (
-    <div>
-      <div className="flex space-x-2">
-        <div className="my-4">
-          <div className="flex space-x-2 mb-4">
+    <div className=" p-6  ">
+      <div className="flex flex-wrap space-x-2 mb-6">
+        <div className="my-4 w-full md:w-auto">
+          <div className="flex space-x-4 mb-4">
             <select
               value={selectedColumn}
               onChange={(e) => setSelectedColumn(e.target.value)}
-              className="border px-2 py-1"
+              style={{ marginLeft: "16px" }}
+              className="border border-gray-300 bg-white px-1 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
             >
               <option value="">انتخاب ستون</option>
               {columns.map((column) => (
@@ -215,37 +295,37 @@ const Table: React.FC = () => {
               <>
                 {(selectedColumn === "sender" ||
                   selectedColumn === "receiver") && (
-                  <select
-                    value={startOrEnd}
-                    onChange={(e) => setStartOrEnd(e.target.value)}
-                    className="border px-2 py-1"
-                  >
-                    <option value="شروع از">شروع از</option>
-                    <option value="ختم به">ختم به</option>
-                  </select>
-                )}
+                    <select
+                      value={startOrEnd}
+                      onChange={(e) => setStartOrEnd(e.target.value)}
+                      className="border  border-gray-300 bg-white px-1  rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
+                    >
+                      <option value="شروع از">شروع از</option>
+                      <option value="ختم به">ختم به</option>
+                    </select>
+                  )}
 
                 {(selectedColumn === "amount" ||
                   selectedColumn === "invoiceNumber" ||
                   selectedColumn === "date") && (
-                  <select
-                    value={determinantValue}
-                    onChange={(e) => setDeterminantValue(e.target.value)}
-                    className="border px-2 py-1"
-                  >
-                    <option value="مساوی">مساوی</option>
-                    <option value="بزرگ تر">بزرگ تر</option>
-                    <option value="بزرگ تر مساوی">بزرگ تر مساوی</option>
-                    <option value="کوچک تر">کوچک تر</option>
-                    <option value="کوچک تر مساوی">کوچک تر مساوی</option>
-                  </select>
-                )}
+                    <select
+                      value={determinantValue}
+                      onChange={(e) => setDeterminantValue(e.target.value)}
+                      className="border mr-2 border-gray-300 bg-white px-1  rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
+                    >
+                      <option value="مساوی">مساوی</option>
+                      <option value="بزرگ تر">بزرگ تر</option>
+                      <option value="بزرگ تر مساوی">بزرگ تر مساوی</option>
+                      <option value="کوچک تر">کوچک تر</option>
+                      <option value="کوچک تر مساوی">کوچک تر مساوی</option>
+                    </select>
+                  )}
 
                 <input
                   type="text"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  className="border px-2 py-1"
+                  className="border border-gray-300 bg-white px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
                   placeholder="مقدار فیلتر"
                 />
               </>
@@ -253,102 +333,192 @@ const Table: React.FC = () => {
 
             <button
               onClick={handleApplyFilter}
-              className="bg-blue-500 text-white px-4 py-1 rounded"
+              className="bg-gray-200  px-2 py-1 rounded-md hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-500"
             >
-              اعمال فیلتر
+              <Image src={filter} alt="" />
             </button>
           </div>
         </div>
-
-        {Object.keys(filters).map((key) => {
-          if (key !== "determinant" && key !== "startOrEnd") {
-            return (
-              <div key={key} className="flex items-center space-x-2">
-                <button
-                  className="bg-blue-500 text-white px-4 py-1 rounded"
-                  onClick={() => handleClearFilter(key)}
-                >
-                  {columns.find((col) => col.key === key)?.label}
-                  {filters[key]} {filters.determinant}
-                </button>
-                <button
-                  className="text-yellow-500"
-                  onClick={() => handleEditFilter(key)}
-                >
-                  ویرایش
-                </button>
-                <button
-                  className="text-red-500"
-                  onClick={() => handleClearFilter(key)}
-                >
-                  سطل
-                </button>
-              </div>
-            );
-          }
-          return null;
-        })}
       </div>
 
-      <table className="w-full mt-4 border-collapse border border-gray-300">
-        <thead>
+      {(Object.keys(filters).length > 3 || draggedFilters.length > 0) ? (
+        <div>
+          <div className="space-y-2 flex flex-row">
+            {Object.keys(filters).map((key) => {
+              if (key !== "determinant" && key !== "startOrEnd") {
+                return (
+                  <div
+                    key={key}
+                    className="flex flex-row items-center space-x-2"
+                    onClick={() => handleClearFilterd(key)}
+                  >
+                    <div
+                      className="flex flex-row gap-1 ml-4 bg-gray-200 px-2 py-1 rounded-md"
+                    >
+                      <div>
+                        <input
+                          type="checkbox"
+                          checked={selectedFilters[key] || false}
+                          onChange={() => handleCheckboxChange(key)}
+                        />
+                      </div>
+                      <div>{columns.find((col) => col.key === key)?.label}</div>
+                      <div>{filters.determinant}</div>
+
+                     <div>{filters[key]}</div>
+                      <div>
+                        <button
+                          className="mr-4 hover:bg-gray-500 hover:rounded-full"
+                          onClick={() => handleEditFilter(key)}
+                        >
+                          <Image className="w-4" src={pencil} alt="" />
+                        </button>
+                      </div>
+                      <div>
+                        <button
+                          className="hover:bg-gray-500 hover:rounded-full"
+                          onClick={() => handleClearFilterd(key)}
+                        >
+                          <Image className="w-4" src={trash} alt="" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })}
+          </div>
+          <DragDropContext onDragEnd={onDragEnd}>
+            <Droppable droppableId="filters">
+              {(provided) => (
+                <div
+                  {...provided.droppableProps}
+                  ref={provided.innerRef}
+                  className="p-4 border rounded bg-gray-100 min-h-[100px]"
+                  style={{
+                    border: "2px dashed #ccc",
+                  }}
+                >
+                  {draggedFilters.map((filterKey, index) => (
+                    <Draggable key={filterKey} draggableId={filterKey} index={index}>
+                      {(provided) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                          className="bg-white p-2 mb-2 rounded shadow w-64 flex items-center justify-between"
+                        >
+                          <span>
+                            {columns.find((col) => col.key === filterKey)?.label}
+                            {filters.determinant}
+                            <div>{filters[filterKey]}</div> 
+                          </span>
+                          <button
+                            onClick={() => handleClearFilter(filterKey)}
+                            className="text-red-500 hover:underline"
+                          >
+                            <Image className="w-4" src={trash} alt="" />
+                          </button>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+        </div>
+      ) : (
+        <div className="space-y-2 flex flex-row">
+          {Object.keys(filters).map((key) => {
+            if (key !== "determinant" && key !== "startOrEnd") {
+              return (
+                <div
+                  key={key}
+                  onClick={() => handleDropFilter(key)}
+                  className="flex flex-row items-center space-x-2"
+                >
+                  <div
+                    className="flex flex-row gap-1 ml-4 bg-gray-200 px-2 py-1 rounded-md"
+                    onClick={() => handleClearFilter(key)}
+                  >
+                    <div>{columns.find((col) => col.key === key)?.label}</div>
+                    <div>{filters.determinant}</div>
+                    <div>{filters[key]}</div>
+                    <div>
+                      <button
+                        className="mr-4 hover:bg-gray-500 hover:rounded-full"
+                        onClick={() => handleEditFilter(key)}
+                      >
+                        <Image className="w-4" src={pencil} alt="" />
+                      </button>
+                    </div>
+                    <div>
+                      <button
+                        className="hover:bg-gray-500 hover:rounded-full"
+                        onClick={() => handleClearFilterd(key)}
+                      >
+                        <Image className="w-4" src={trash} alt="" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })}
+        </div>
+      )}
+
+      <table className="w-full mt-6 table-auto border-collapse rounded-md overflow-hidden">
+        <thead className="bg-gray-200 text-black">
           <tr>
             {columns.map((column) => (
               <th
                 key={column.key}
-                onClick={() => handleHeaderClick(column.key)}
-                className="border border-gray-300 px-4 py-2 cursor-pointer"
+                className="text-center border border-gray-300 px-6 py-3"
               >
                 {column.label}
-
-                {activeHeaderFilter === column.key && (
-                  <div className="mt-2">
-                    <div className="flex items-center">
-                      <input
-                        type="text"
-                        value={inputValue}
-                        onChange={(e) => handleInputChange(e.target.value)}
-                        onKeyPress={handleKeyPress}
-                        className="border px-2 py-1 mr-2"
-                      />
-                      {column.key === "sender" || column.key === "receiver" ? (
-                        <select
-                          value={startOrEnd}
-                          onChange={(e) =>
-                            handleStartOrEndChange(e.target.value)
-                          }
-                          className="border px-2 py-1 mr-2"
-                        >
-                          <option value="شروع از">شروع از</option>
-                          <option value="ختم به">ختم به</option>
-                        </select>
-                      ) : (
-                        <select
-                          value={determinantValue}
-                          onChange={(e) =>
-                            handleDeterminantChange(e.target.value)
-                          }
-                          className="border px-2 py-1 mr-2"
-                        >
-                          <option value="مساوی">مساوی</option>
-                          <option value="بزرگ تر">بزرگ تر</option>
-                          <option value="بزرگ تر مساوی">بزرگ تر مساوی</option>
-                          <option value="کوچک تر">کوچک تر</option>
-                          <option value="کوچک تر مساوی">کوچک تر مساوی</option>
-                        </select>
-                      )}
-                    </div>
-                  </div>
+              </th>
+            ))}
+          </tr>
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key} className="text-center border border-gray-300">
+                <input
+                  type="text"
+                  value={filters[column.key] || ""}
+                  onKeyPress={(e) => handleKeyPress(e, column.key)}
+                  onChange={(e) => handleFilterChange(e.target.value, column.key)}
+                  className="border hover:border-gray-400 ml-2 border-gray-300 w-28 px-1  rounded-md focus:ring-2 focus:ring-gray-500"
+                />
+                {(column.key === "sender" || column.key === "receiver") && (
+                  <select
+                    value={startOrEnd}
+                    onChange={(e) => setStartOrEnd(e.target.value)}
+                    className="border ml-2 border-gray-300 px-1  rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
+                  >
+                    <option value="شروع از">شروع از</option>
+                    <option value="ختم به">ختم به</option>
+                  </select>
                 )}
-
-                {filters[column.key] && (
-                  <div className="text-sm mt-1 text-gray-600">
-                    <span>
-                      {column.label}: {filters[column.key]}{" "}
-                      {filters.determinant}
-                    </span>
-                  </div>
-                )}
+                {(column.key === "amount" ||
+                  column.key === "invoiceNumber" ||
+                  column.key === "date") && (
+                    <select
+                      value={determinantValue}
+                      onChange={(e) => setDeterminantValue(e.target.value)}
+                      className="border ml-2 border-gray-300 px-1  rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
+                    >
+                      <option value="مساوی">مساوی</option>
+                      <option value="بزرگ تر">بزرگ تر</option>
+                      <option value="بزرگ تر مساوی">بزرگ تر مساوی</option>
+                      <option value="کوچک تر">کوچک تر</option>
+                      <option value="کوچک تر مساوی">کوچک تر مساوی</option>
+                    </select>
+                  )}
               </th>
             ))}
           </tr>
@@ -357,11 +527,8 @@ const Table: React.FC = () => {
           {filteredInvoices.map((invoice, index) => (
             <tr key={index}>
               {columns.map((column) => (
-                <td
-                  key={column.key}
-                  className="border border-gray-300 px-4 py-2"
-                >
-                  {invoice[column.key as keyof Invoice]}
+                <td key={column.key} className="border text-center p-2">
+                  {invoice[column.key]}
                 </td>
               ))}
             </tr>

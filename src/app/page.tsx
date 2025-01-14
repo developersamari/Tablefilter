@@ -1,10 +1,14 @@
-import Image from "next/image";
-import Table from "./componenet/Table";
+
+import Table from "@/app/componenet/Table";
+
 
 export default function Home() {
   return (
     
     <>
+    {/* <TableUI/> */}
+
+
     <Table/>
     </>
   );
