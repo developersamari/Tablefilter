@@ -377,7 +377,7 @@ const Table: React.FC = () => {
                       <div>
                         <button
                           className="hover:bg-gray-500 hover:rounded-full"
-                          onClick={() => handleClearFilterd(key)}
+                          onClick={() => handleClearFilterd(key)}git 
                         >
                           <Image className="w-4" src={trash} alt="" />
                         </button>
